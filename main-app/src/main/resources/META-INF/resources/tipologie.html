@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kayak - Gestione Tipologie</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+<div class="container mt-5">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h1>Gestione Tipologie</h1>
+    <div>
+      <a href="index.html" class="btn btn-outline-secondary">Crea Evento</a>
+      <a href="events.html" class="btn btn-outline-secondary">Lista Eventi</a>
+    </div>
+  </div>
+
+  <!-- Form Add Tipologia -->
+  <div class="card mb-4">
+    <div class="card-header">
+      <h3>Add Tipologia</h3>
+    </div>
+    <div class="card-body">
+      <form id="tipologiaForm">
+        <div class="mb-3">
+          <label for="name" class="form-label">Name</label>
+          <input type="text" class="form-control" id="name" placeholder="es: HOTEL" required>
+        </div>
+
+        <div class="mb-3">
+          <label for="description" class="form-label">Description</label>
+          <textarea class="form-control" id="description" rows="2" placeholder="Descrizione tipologia"></textarea>
+        </div>
+
+
+
+        <hr>
+
+        <div class="mb-3">
+          <label class="form-label">Fields</label>
+          <div id="fieldsContainer"></div>
+          <button type="button" class="btn btn-sm btn-secondary mt-2" onclick="addField()">+ Aggiungi Campo</button>
+        </div>
+
+        <div class="d-flex gap-2">
+          <button type="submit" class="btn btn-primary">Save</button>
+          <button type="button" class="btn btn-outline-secondary" onclick="resetForm()">Undo</button>
+        </div>
+      </form>
+      <div id="message" class="mt-3"></div>
+    </div>
+  </div>
+
+  <!-- Lista Tipologie -->
+  <div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <h3>Lista Tipologie</h3>
+      <button class="btn btn-secondary btn-sm" onclick="loadTipologie()">Aggiorna</button>
+    </div>
+    <div class="card-body">
+      <table class="table table-striped">
+        <thead>
+        <tr>
+          <th>ID</th>
+          <th>Nome</th>
+          <th>Description</th>
+          <th>Tool MCP</th>
+          <th>Campi</th>
+          <th>Azioni</th>
+        </tr>
+        </thead>
+        <tbody id="tipologieTable">
+        <tr><td colspan="6" class="text-center">Caricamento...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+        let fieldCounter = 0;
+
+        // Carica tipologie all'avvio
+        loadTipologie();
+
+        // Aggiungi campo dinamico
+        function addField() {
+            fieldCounter++;
+            const container = document.getElementById('fieldsContainer');
+            const fieldDiv = document.createElement('div');
+            fieldDiv.className = 'card mb-2 p-3';
+            fieldDiv.id = 'field-' + fieldCounter;
+            fieldDiv.innerHTML = `
+                <div class="row g-2">
+                    <div class="col-md-4">
+                        <input type="text" class="form-control field-name" placeholder="Nome campo" required>
+                    </div>
+                    <div class="col-md-3">
+                        <select class="form-select field-type" required>
+                            <option value="STRING">STRING</option>
+                            <option value="NUMBER">NUMBER</option>
+                            <option value="DATE">DATE</option>
+                            <option value="URL">URL</option>
+                            <option value="FILE">FILE</option>
+                            <option value="BOOLEAN">BOOLEAN</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="form-check mt-2">
+                            <input class="form-check-input field-download" type="checkbox" id="download-${fieldCounter}">
+                            <label class="form-check-label" for="download-${fieldCounter}">Requires Download</label>
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <button type="button" class="btn btn-sm btn-danger" onclick="removeField(${fieldCounter})">Rimuovi</button>
+                    </div>
+                </div>
+            `;
+            container.appendChild(fieldDiv);
+        }
+
+        // Rimuovi campo
+        function removeField(id) {
+            document.getElementById('field-' + id).remove();
+        }
+
+        // Reset form
+        function resetForm() {
+            document.getElementById('tipologiaForm').reset();
+            document.getElementById('fieldsContainer').innerHTML = '';
+            fieldCounter = 0;
+        }
+
+        // Submit form
+        document.getElementById('tipologiaForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const name = document.getElementById('name').value;
+            const description = document.getElementById('description').value;
+
+            // Raccogli campi
+            const fields = [];
+            document.querySelectorAll('#fieldsContainer .card').forEach(card => {
+                fields.push({
+                    fieldName: card.querySelector('.field-name').value,
+                    fieldType: card.querySelector('.field-type').value,
+                    requiresDownload: card.querySelector('.field-download').checked
+                });
+            });
+
+            try {
+                const response = await fetch('/api/tipologie', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({name, description, fields})
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    document.getElementById('message').innerHTML =
+                        '<div class="alert alert-success">Tipologia creata! ID: ' + result.id + '</div>';
+                    resetForm();
+                    loadTipologie();
+                } else {
+                    const error = await response.text();
+                    document.getElementById('message').innerHTML =
+                        '<div class="alert alert-danger">Errore: ' + error + '</div>';
+                }
+            } catch (error) {
+                document.getElementById('message').innerHTML =
+                    '<div class="alert alert-danger">Errore: ' + error + '</div>';
+            }
+        });
+
+        // Carica tipologie
+        async function loadTipologie() {
+            try {
+                const response = await fetch('/api/tipologie');
+                const tipologie = await response.json();
+
+                const tbody = document.getElementById('tipologieTable');
+
+                if (tipologie.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="6" class="text-center">Nessuna tipologia</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = tipologie.map(t => `
+                    <tr>
+                        <td><strong>${t.id}</strong></td>
+                        <td><span class="badge bg-primary">${t.name}</span></td>
+                        <td><small>${t.description || '-'}</small></td>
+                        <td><code>${t.mcpToolName}</code></td>
+                        <td><small>${t.fields.length} campi</small></td>
+                        <td>
+                            <button class="btn btn-sm btn-danger" onclick="deleteTipologia(${t.id})">Elimina</button>
+                        </td>
+                    </tr>
+                `).join('');
+            } catch (error) {
+                console.error('Errore caricamento tipologie:', error);
+            }
+        }
+
+        // Elimina tipologia
+        async function deleteTipologia(id) {
+            if (!confirm('Sei sicuro di voler eliminare questa tipologia?')) return;
+
+            try {
+                await fetch('/api/tipologie/' + id, {method: 'DELETE'});
+                loadTipologie();
+            } catch (error) {
+                alert('Errore eliminazione: ' + error);
+            }
+        }
+    </script>
+</body>
+</html>

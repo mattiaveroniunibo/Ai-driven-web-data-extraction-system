@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kayak - Lista Eventi</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+<div class="container mt-5">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h1>Lista Eventi</h1>
+    <div>
+      <a href="index.html" class="btn btn-primary">Crea Evento</a>
+      <button onclick="loadEvents()" class="btn btn-secondary">Aggiorna</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-body">
+      <table class="table table-striped table-hover">
+        <thead>
+        <tr>
+          <th>ID</th>
+          <th>URL</th>
+          <th>Tipologia</th>
+          <th>Data</th>
+          <th>Stato</th>
+          <th>Risultato</th>
+        </tr>
+        </thead>
+        <tbody id="eventsTable">
+        <tr><td colspan="6" class="text-center">Caricamento...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+        // Carica eventi all'avvio
+        loadEvents();
+
+        // Auto-refresh ogni 10 secondi
+        setInterval(loadEvents, 10000);
+
+        async function loadEvents() {
+            try {
+                const response = await fetch('/api/events');
+                const events = await response.json();
+
+                const tbody = document.getElementById('eventsTable');
+
+                if (events.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="6" class="text-center">Nessun evento</td></tr>';
+                    return;
+                }
+
+                // Ordina per ID decrescente (più recenti prima)
+                events.sort((a, b) => b.id - a.id);
+
+                tbody.innerHTML = events.map(e => {
+                    const statoClass = e.lavorato ? 'success' : 'warning';
+                    const statoText = e.lavorato ? 'Completato' : 'In Attesa';
+                    const tipologiaClass = e.tipologia === 'IMAGE' ? 'primary' : 'info';
+
+                    return `
+                        <tr>
+                            <td><strong>${e.id}</strong></td>
+                            <td><small>${e.url}</small></td>
+                            <td><span class="badge bg-${tipologiaClass}">${e.tipologia}</span></td>
+                            <td><small>${new Date(e.data).toLocaleString('it-IT')}</small></td>
+                            <td><span class="badge bg-${statoClass}">${statoText}</span></td>
+                            <td><small class="text-break">${e.risultato || '-'}</small></td>
+                        </tr>
+                    `;
+                }).join('');
+            } catch (error) {
+                console.error('Errore caricamento eventi:', error);
+                document.getElementById('eventsTable').innerHTML =
+                    '<tr><td colspan="6" class="text-center text-danger">Errore caricamento</td></tr>';
+            }
+        }
+    </script>
+</body>
+</html>
