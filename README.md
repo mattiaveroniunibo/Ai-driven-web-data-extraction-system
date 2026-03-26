@@ -53,7 +53,7 @@ The system is composed of three main services:
 ---
 
 ## Status
-Work in progress – project under active refinement
+Completed
 
 ---
 
