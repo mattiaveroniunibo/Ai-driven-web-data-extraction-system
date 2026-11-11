@@ -3,9 +3,9 @@
 ## Overview
 
 This project is a microservices-based system designed to automate the extraction and processing of web data.  
-Given a URL, the system automatically determines the type of content (e.g. image or article) and applies the appropriate processing pipeline.
+Given a URL, the system uses a local LLM to infer, from the URL alone, whether it points to an image or to a web page, and applies the appropriate processing pipeline.
 
-The system relies on AI to dynamically interpret the input URL and select the appropriate processing tool, independently from user-provided metadata.
+The system relies on AI to interpret the input URL and select the processing tool, independently from user-provided metadata. The page content itself is not inspected by the AI: the decision is based only on the URL.
 
 ---
 
@@ -22,8 +22,12 @@ Client → POST /api/events → Orchestrator (8080)
                         ┌─────────────────┐
                         ▼                 ▼
           Image Service (8082)   News Service (8081)
-          downloaded-images/     NewsResult (DB text)
-          ImageResult (DB path)
+          saves file in          returns cleaned text
+          downloaded-images/     (first 500 chars)
+                        └────────┬────────┘
+                                 ▼
+              Orchestrator stores results in MySQL
+              (ImageResult / NewsResult)
 ```
 
 The system is composed of three main services:
@@ -33,17 +37,17 @@ The system is composed of three main services:
 - Exposes REST APIs for event management
 - Handles scheduled processing every 30 seconds
 - Integrates with AI (Ollama/phi3 via LangChain4j) for autonomous tool selection
-- Manages persistence on MySQL database
+- Calls the two processing services and stores their results in MySQL (`NewsResult` / `ImageResult`)
 
 ### Image Processing Service (port 8082)
 - Receives image URLs
-- Downloads and stores images locally in `downloaded-images/`
-- Saves the file path in `ImageResult` table
+- Downloads and stores images locally in `downloaded-images/` (file name `image_<timestamp>.jpg`)
+- Returns a confirmation message with the absolute file path, which the Orchestrator stores in the `ImageResult` table
 
 ### Content Extraction Service (port 8081)
-- Extracts textual content from web pages
-- Cleans and structures HTML content using regex-based filtering
-- Saves full text and summary in `NewsResult` table
+- Downloads web pages and extracts their textual content
+- Removes HTML markup using regex-based filtering
+- Returns the first 500 characters of the cleaned text, which the Orchestrator stores in the `NewsResult` table
 
 ---
 
@@ -52,9 +56,9 @@ The system is composed of three main services:
 1. A new event is submitted via REST API with a URL, user-defined type (tipologia), and scheduled date
 2. The event is saved in MySQL with status `lavorato = false`
 3. Every 30 seconds the scheduler checks for pending events
-4. The AI (Ollama/phi3) analyzes the URL and autonomously decides which tool to use — `downloadImage` or `readNews`
-5. The corresponding microservice is invoked
-6. Results are stored in the database (`ImageResult` or `NewsResult`) and the event is marked as processed
+4. The AI (Ollama/phi3) analyzes the URL and answers with the name of the tool to use — `downloadImage` or `readNews`
+5. The Orchestrator invokes the corresponding microservice via REST (`POST /mcp/execute`); if the AI answer does not contain "image", the text extraction service is used by default
+6. Results are stored in the database (`ImageResult` or `NewsResult`) and the event is marked as processed; if processing fails, the error message is stored as the event result
 
 > **Note:** The user-provided "tipologia" is stored as metadata for classification purposes, but it is not used to determine the processing logic.  
 > The AI independently analyzes the URL to decide which tool to invoke.
@@ -65,14 +69,14 @@ The system is composed of three main services:
 
 | Technology | Version | Purpose |
 |---|---|---|
-| Java | 20 (target 17) | Language |
+| Java | 17 | Language |
 | Quarkus | 3.29.x | Microservices framework |
 | Hibernate / JPA (Panache) | — | Database persistence |
 | MySQL | 8.0 | Relational database |
 | Docker | — | MySQL containerization |
 | LangChain4j | — | AI integration |
 | Ollama + phi3 | — | Local LLM (no cloud) |
-| MCP (Model Context Protocol) | — | Tool exposure between microservices and AI |
+| MCP (Model Context Protocol) | — | Tool exposure by the two microservices (MCP servers); see Limitations |
 | Bootstrap 5 | — | Web interface |
 
 ---
@@ -80,7 +84,7 @@ The system is composed of three main services:
 ## Prerequisites
 
 - Java 17+
-- Maven 3.9+
+- Maven 3.9+ (the Quarkus guides recommend a recent 3.9.x release)
 - Docker Desktop
 - [Ollama](https://ollama.com) installed with phi3 model
 
@@ -163,7 +167,7 @@ GET /api/events
 
 Results are stored in MySQL and can be queried directly:
 ```sql
--- Full extracted text
+-- Extracted text (first 500 characters)
 SELECT event_id, summary, textContent FROM NewsResult;
 
 -- Downloaded image paths
@@ -174,8 +178,10 @@ SELECT event_id, imagePath FROM ImageResult;
 
 ## Limitations
 
-- Content extraction accuracy depends on the structure of target websites
-- AI classification may not be 100% accurate for ambiguous URLs
+- Content extraction accuracy depends on the structure of target websites; the regex-based cleaning may leave JavaScript residues in the extracted text
+- Only the first 500 characters of each page are stored
+- AI classification is based on the URL only and may not be accurate for ambiguous URLs; with the default temperature (1.0) the answer may vary between runs
+- The two services expose MCP tools, but the Orchestrator invokes them through a separate REST endpoint (`/mcp/execute`), not through the MCP protocol
 - System is designed for local execution (AI runs locally via Ollama)
 
 ---
